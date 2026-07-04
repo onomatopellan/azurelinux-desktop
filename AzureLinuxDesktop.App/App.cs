@@ -19,7 +19,7 @@ public sealed class AzureLinuxDesktopApp : Component
     private const string ImageName = "azurelinux-xfce-xrdp:4.0";
     private const string ContainerName = "azurelinux-xfce-desktop";
     private const string RdpServer = "127.0.0.1";
-    private const int RdpPort = 3389;
+    private const int RdpPort = 65469; //3389;
     // Must match the desktop account baked into container/Dockerfile.
     private const string RdpUser = "deskuser";
     private const string RdpPassword = "ChangeMe123!";

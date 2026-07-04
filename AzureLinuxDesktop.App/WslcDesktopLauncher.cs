@@ -34,8 +34,8 @@ public sealed class WslcDesktopLauncher
         Action<string> log)
     {
 #if WSLC_SDK
-        var missing = WslcService.GetMissingComponents();
-        if (missing != ComponentFlags.None)
+        IReadOnlyList<Component> missing = WslcService.GetMissingComponents();
+        if (missing.Count != 0)
         {
             log($"Installing missing wslc components: {missing}");
             await WslcService.InstallWithDependenciesAsync();
@@ -56,7 +56,7 @@ public sealed class WslcDesktopLauncher
         // Terminate any leftover session from a previous app instance. A live
         // session with the same display name fails Start with
         // ERROR_ALREADY_EXISTS, and its containers die with it (clean slate).
-        await RunWslcQuietAsync($"system session terminate \"{sessionName}\"");
+        await RunWslcQuietAsync($"--session \"{sessionName}\" system session terminate");
 
         // Storage handles release asynchronously after a terminate, so retry
         // with a short backoff.
@@ -68,11 +68,11 @@ public sealed class WslcDesktopLauncher
                 var settings = new SessionSettings(sessionName, storagePath)
                 {
                     CpuCount = 4,
-                    MemoryMB = 8192,
+                    MemorySizeInMB = 8192,
                     // Explicit sessions default to no GPU (the service only
                     // defaults it on for the null-settings default session);
                     // the container's EnableGpu flag requires it.
-                    FeatureFlags = SessionFeatureFlags.EnableGpu
+                    EnableGpu = true
                 };
                 session = new Session(settings);
                 session.Start();
@@ -91,7 +91,7 @@ public sealed class WslcDesktopLauncher
         // session's store (for example, after a failed start). The WinRT SDK
         // has no container enumeration yet, so remove it best-effort with the
         // CLI while the session is alive.
-        await RunWslcQuietAsync($"rm --session \"{sessionName}\" -f \"{containerName}\"");
+        await RunWslcQuietAsync($"--session \"{sessionName}\" rm -f \"{containerName}\"");
 
         // wslc image stores are per-session. A plain `wslc build` lands in the
         // default session's store, not this one. Fast path: copy the image
@@ -129,9 +129,9 @@ public sealed class WslcDesktopLauncher
         ContainerSettings BuildSettings(bool withGpu)
         {
             var initProcess = new ProcessSettings();
-            initProcess.CmdLine.Add("/bin/bash");
-            initProcess.CmdLine.Add("-lc");
-            initProcess.CmdLine.Add(
+            initProcess.CommandLine.Add("/bin/bash");
+            initProcess.CommandLine.Add("-lc");
+            initProcess.CommandLine.Add(
                 $"ln -sfn /usr/share/zoneinfo/{hostTimeZone} /etc/localtime 2>/dev/null; " +
                 "exec /usr/local/bin/start-desktop.sh");
 
@@ -145,7 +145,8 @@ public sealed class WslcDesktopLauncher
                 NetworkingMode = ContainerNetworkingMode.Bridged,
                 // GPU paravirtualization: injects /dev/dxg and the WSL Mesa
                 // d3d12 stack via CDI so in-container GL renders on the GPU.
-                Flags = withGpu ? ContainerFlags.EnableGpu : ContainerFlags.None
+                //Flags = withGpu ? ContainerFlags.EnableGpu : ContainerFlags.None
+                EnableGpu = true
             };
             settings.PortMappings.Add(new ContainerPortMapping((ushort)hostRdpPort, 3389, PortProtocol.TCP));
             return settings;
@@ -160,7 +161,7 @@ public sealed class WslcDesktopLauncher
             // The best-effort cleanup can miss (CLI session-name resolution
             // is flaky for SDK-created sessions). Remove and retry once.
             log("A container with our name already exists; removing it and retrying...");
-            await RunWslcQuietAsync($"rm --session \"{sessionName}\" -f \"{containerName}\"");
+            await RunWslcQuietAsync($"--session \"{sessionName}\" rm -f \"{containerName}\"");
             _container = _session.CreateContainer(BuildSettings(withGpu: true));
         }
         catch (System.Runtime.InteropServices.COMException ex) when ((uint)ex.HResult == 0x80070032) // ERROR_NOT_SUPPORTED
@@ -208,7 +209,7 @@ public sealed class WslcDesktopLauncher
                 .Replace("library/", "", StringComparison.OrdinalIgnoreCase);
 
         var wanted = Normalize(imageName);
-        return _session!.Images.Any(
+        return _session!.GetImages().Any(
             image => string.Equals(Normalize(image.Name), wanted, StringComparison.OrdinalIgnoreCase));
     }
 
